@@ -1,0 +1,87 @@
+module Lexer (lexer) where
+
+import Data.Char (isSpace, isDigit, isAlpha, isAlphaNum)
+import GHC.IO.Handle.Types (Newline(LF))
+
+-- each token is always exactly one of the following:
+data Token
+    = -- Identifiers and constants both hold data, i.e. they need to keep track of their actual content
+      Identifier String 
+    | Constant Int      
+    | IntKeyword
+    | VoidKeyword
+    | RetKeyword
+    | OpenPar
+    | ClosePar
+    | OpenBrace
+    | CloseBrace
+    | Semicolon
+    -- Show allows us to print these new data types, eq allows us to check them for equality
+    -- deriving tells the compiler to come up with these functions for us
+    deriving (Show, Eq)
+
+-- take a string input and return either an error message or a list of tokens
+lexer :: String -> Either String [Token]
+-- an empty input returns an empty list of tokens:
+lexer [] = Right []
+
+-- split input into first element c and all remaining elements x
+lexer (c:x)
+  | isSpace c   = lexer x
+  | c == '('    = addToken (OpenPar, x)
+  | c == ')'    = addToken (ClosePar, x)
+  | c == '{'    = addToken (OpenBrace, x)
+  | c == '}'    = addToken (CloseBrace, x)
+  | c == ';'    = addToken (Semicolon, x)
+  | isDigit c   = lexNum (c:x)
+  | isAlpha c   = lexWord (c:x)
+  | otherwise   = Left (" Error - Invalid character: " ++ [c])
+
+-- accept a tuple containing the new token and the remaining string,
+-- return either an error message or a list of tokens:
+addToken :: (Token, String) -> Either String [Token]
+-- lexer rem is a recursive function call that sends the remaining string back to lexer:
+addToken (t, rem) = case lexer rem of
+    -- if that results in an error, return the error
+    Left error   -> Left error
+    -- otherwise add the newly lexed token to the list of tokens:
+    -- ( (t: tokens) PREPENDS not appends, but that works because recursion)
+    Right tokens -> Right (t : tokens)
+
+
+-- accept a string and return either an error message or a list of tokens:
+lexNum :: String -> Either String [Token]
+lexNum str =
+    -- isDigit returns a tuple containing the leading string of digit characters and anything else that follows.
+    -- num is the string of digits, rem is the remainder:
+    let (num, rem) = span isDigit str
+
+    -- check what comes after the digits:
+    in case rem of
+        -- if the remainder is non-empty, call the first character of that remainder r. if r is alphanum,
+        -- the token can't be a valid one. e.g. 123abc, 123!, 123_, etc are all invalid tokens:
+        (r:_) | isAlphaNum r -> Left ("Error - Invalid token: " ++ num ++ [r])
+        -- otherwise if no extra character immediately follows, this is a valid token.
+        -- read num converts num from a string of digits to an actual int type, which gets passsed back to
+        -- addToken along with the remaining string:
+        _ -> addToken ((Constant (read num)), rem)
+
+-- accept a char and return a boolean
+isAllowedChar :: Char -> Bool
+-- allowable characters in words are alphanumeric or underscores ONLY:
+isAllowedChar c = isAlphaNum c || c == '_'
+
+-- accept a string and return either an error message or a list of tokens:
+lexWord :: String -> Either String [Token]
+lexWord str =
+    let (word, rem) = span isAllowedChar str in addToken (keywordORnot word , rem)
+
+-- accept a word and return the correct token type, depending on whether the word
+-- is a valid keyword or just a regular identifier:
+keywordORnot :: String -> Token
+-- only int, return, and void are valid keywords so far:
+keywordORnot "int"  = IntKeyword
+keywordORnot "return"  = RetKeyword
+keywordORnot "void"  = VoidKeyword
+-- anything else not matching the above gets returned as a regular identifier:
+keywordORnot str  = Identifier str
