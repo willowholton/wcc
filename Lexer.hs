@@ -1,21 +1,20 @@
-module Lexer (lexer) where
+module Lexer (Token(..), lexer) where
 
 import Data.Char (isSpace, isDigit, isAlpha, isAlphaNum)
-import GHC.IO.Handle.Types (Newline(LF))
 
 -- each token is always exactly one of the following:
 data Token
     = -- Identifiers and constants both hold data, i.e. they need to keep track of their actual content
-      Identifier String 
-    | Constant Int      
-    | IntKeyword
-    | VoidKeyword
-    | RetKeyword
-    | OpenPar
-    | ClosePar
-    | OpenBrace
-    | CloseBrace
-    | Semicolon
+      IdentifierToken String 
+    | ConstantToken Int      
+    | IntKeywordToken
+    | VoidKeywordToken
+    | RetKeywordToken
+    | OpenParToken
+    | CloseParToken
+    | OpenBraceToken
+    | CloseBraceToken
+    | SemicolonToken
     -- Show allows us to print these new data types, eq allows us to check them for equality
     -- deriving tells the compiler to come up with these functions for us
     deriving (Show, Eq)
@@ -25,14 +24,18 @@ lexer :: String -> Either String [Token]
 -- an empty input returns an empty list of tokens:
 lexer [] = Right []
 
+-- check for comments:
+lexer ('/':'/':x) = skipLine x
+lexer ('/':'*':x) = skipMultiLine x
+
 -- split input into first element c and all remaining elements x
 lexer (c:x)
   | isSpace c   = lexer x
-  | c == '('    = addToken (OpenPar, x)
-  | c == ')'    = addToken (ClosePar, x)
-  | c == '{'    = addToken (OpenBrace, x)
-  | c == '}'    = addToken (CloseBrace, x)
-  | c == ';'    = addToken (Semicolon, x)
+  | c == '('    = addToken (OpenParToken, x)
+  | c == ')'    = addToken (CloseParToken, x)
+  | c == '{'    = addToken (OpenBraceToken, x)
+  | c == '}'    = addToken (CloseBraceToken, x)
+  | c == ';'    = addToken (SemicolonToken, x)
   | isDigit c   = lexNum (c:x)
   | isAlpha c   = lexWord (c:x)
   | otherwise   = Left (" Error - Invalid character: " ++ [c])
@@ -47,6 +50,18 @@ addToken (t, rem) = case lexer rem of
     -- otherwise add the newly lexed token to the list of tokens:
     -- ( (t: tokens) PREPENDS not appends, but that works because recursion)
     Right tokens -> Right (t : tokens)
+
+-- skip single line comments by looking for new line char:
+skipLine :: String -> Either String [Token]
+skipLine []       = lexer []
+skipLine ('\n':x) = lexer x
+skipLine (_:x)    = skipLine x
+
+-- skip multiline comments by looking for matching '*/' pattern:
+skipMultiLine :: String -> Either String [Token]
+skipMultiLine []          = lexer []
+skipMultiLine ('*':'/':x) = lexer x
+skipMultiLine (_:x)       = skipMultiLine x
 
 
 -- accept a string and return either an error message or a list of tokens:
@@ -64,7 +79,7 @@ lexNum str =
         -- otherwise if no extra character immediately follows, this is a valid token.
         -- read num converts num from a string of digits to an actual int type, which gets passsed back to
         -- addToken along with the remaining string:
-        _ -> addToken ((Constant (read num)), rem)
+        _ -> addToken ((ConstantToken (read num)), rem)
 
 -- accept a char and return a boolean
 isAllowedChar :: Char -> Bool
@@ -80,8 +95,8 @@ lexWord str =
 -- is a valid keyword or just a regular identifier:
 keywordORnot :: String -> Token
 -- only int, return, and void are valid keywords so far:
-keywordORnot "int"  = IntKeyword
-keywordORnot "return"  = RetKeyword
-keywordORnot "void"  = VoidKeyword
+keywordORnot "int"  = IntKeywordToken
+keywordORnot "return"  = RetKeywordToken
+keywordORnot "void"  = VoidKeywordToken
 -- anything else not matching the above gets returned as a regular identifier:
-keywordORnot str  = Identifier str
+keywordORnot str  = IdentifierToken str
