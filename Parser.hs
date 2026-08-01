@@ -27,6 +27,9 @@ parseExp (ConstantToken num : rem) = Right (Constant num, rem)
 -- if called on anything that doesn't match the above pattern, return an error message:
 parseExp _ = Left "Error - expected an expression"
 
+-- print the parsed expression nicely using show:
+printExp :: Exp -> (String)
+printExp (Constant num)  = "Constant(" ++ show num ++ ")"
 
 parseStatement :: [Token] -> Either String (Statement, [Token])
 -- split the return keyword off and parse the first token of the remaining tokens: 
@@ -39,9 +42,15 @@ parseStatement (RetKeywordToken : rem) = case parseExp rem of
         (SemicolonToken : rem) -> Right (Return exp, rem)
         -- if no semicolon, return error:
         _                      -> Left "Error - expected ;"
-
 -- anything else that doesn't match the pattern of "return ___" is an error
 parseStatement _ = Left "Error - expected 'return'"
+
+-- print statement nicely using printExpression:
+printStatement :: Statement -> Int -> (String)
+printStatement (Return exp) depth =
+  "Return(\n" ++ 
+  indent (depth + 1) ++ printExp exp ++ "\n" ++
+  indent depth ++ ")"
 
 parseFunction :: [Token] -> Either String (Function, [Token])
 -- take the given list of tokens and check for each of the following:
@@ -58,6 +67,13 @@ parseFunction tokens = do
     rem7 <- expect CloseBraceToken rem6 "Error - expected '}'"
     Right (Function name st, rem7)
 
+printFunction :: Function -> Int -> String
+printFunction (Function name st) depth = 
+  indent depth ++ "Function(\n" ++
+  indent (depth+1) ++ "name = " ++ name ++ "\n" ++
+  indent (depth+1) ++ "body = " ++ printStatement st (depth + 1) ++ "\n" ++
+  indent (depth) ++ ")"
+
 -- expect is a function that takes a token type, a list of tokens, and an error message to produce
 -- if it fails to find the specified token at the head of the given list of tokens. it returns either
 -- an error message string or a list of remaining tokens
@@ -65,7 +81,7 @@ expect :: Token -> ([Token] -> (String -> (Either String [Token])))
 -- if given expected, a token and a remainder, and anything else following, where token == expected, then return the remainder
 expect expected (tok : rem) _ | (tok == expected) = Right rem
 -- if not matching that pattern exactly, return the given error message:
-expect _        _           err                   = Left err
+expect expected toks        err                   = Left (err ++ " but found " ++ showTokens toks)
 
 -- expectIdentifier is like expect except that it takes a list of tokens and an error message, returns a tuple containing a string
 -- (the name of the identifier) and a list of remaining tokens
@@ -81,5 +97,30 @@ parseProgram tokens = do
   case rem of
     [] -> Right (Program func)
     _  -> Left "Error - unexpection tokens after function end"
-    
 
+printProgram :: Program  -> String
+printProgram (Program func) =
+  "Program(\n" ++
+  printFunction func 1 ++ "\n" ++
+  ")"
+
+indent :: Int -> String
+indent level = replicate (level * 2) ' '
+
+-- helper to print the first token in a given list of tokens 
+showTokens :: [Token] -> String
+showTokens (tok : _) = printToken tok
+showTokens []        = "no input"
+
+-- helper to print a single token nicely:
+printToken :: Token -> String
+printToken (IdentifierToken name) = "'Identifier(" ++ name ++ ")'"
+printToken (ConstantToken num)    = "'Constant(" ++ show num ++ ")'"
+printToken IntKeywordToken        = "'Int'"
+printToken VoidKeywordToken       = "'void'"
+printToken RetKeywordToken        = "'return'"
+printToken OpenParToken           = "'('"
+printToken CloseParToken          = "')'"
+printToken OpenBraceToken         = "'{'"
+printToken CloseBraceToken        = "'}'"
+printToken SemicolonToken         = "';'"

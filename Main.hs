@@ -3,9 +3,10 @@ module Main (main) where
 import System.Exit (exitSuccess, exitFailure)
 import System.Environment (getArgs)
 import System.Directory (doesFileExist)
+import System.FilePath (dropExtension)
 import Lexer
 import Parser
-
+import Asm
 
 main :: IO ()
 main = do
@@ -15,6 +16,7 @@ main = do
 
 run :: [String] -> IO ()
 run [flag, file] = do
+  let outFile = dropExtension file ++ ".s"
   exists <- doesFileExist file
   if not exists
     then do
@@ -26,19 +28,32 @@ run [flag, file] = do
         Left err -> do
           putStrLn err
           exitFailure
-        Right () -> exitSuccess
+        Right NoOutput       -> exitSuccess
+        Right (PrintAst program) -> do
+          putStrLn (printProgram program)
+          exitSuccess
+        Right (WriteAsm asmString) -> do
+          writeFile outFile asmString
+          exitSuccess
 run _ = exitFailure
 
-runCompiler :: String -> (String -> (Either String ()))
+runCompiler :: String -> (String -> (Either String Result))
 runCompiler flag contents = do
-  tokens <- lexer contents
-  if flag == "--lex"
-    then Right ()
-    else do
-      program <- parseProgram tokens
-      if flag == "--parse"
-        then Right ()
-        else Left "no codegen implemented yet"
+  tokens  <- lexer contents
+  program <- parseProgram tokens
+  let asmProgram = getProgram program
+  case flag of
+    "--lex"     -> Right NoOutput
+    "--parse"   -> Right (PrintAst program)
+    "--codegen" -> Right NoOutput
+    "-S"        -> Right (WriteAsm (printAsmProgram asmProgram))
+    _           -> Left "Not implemented yet"
+
+data Result
+  = NoOutput
+  | PrintAst Program
+  | WriteAsm String
+  deriving (Show, Eq)
 
 validFlag :: String -> Bool
 validFlag flag = case flag of
