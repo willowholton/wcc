@@ -39,18 +39,18 @@ getProgram :: Program -> AsmProgram
 getProgram (Program func) = AsmProgram [getFunction func]
 
 printOperand :: AsmOperand -> String
-printOperand (Imm num)  = "$" ++ show num
-printOperand (Reg)  = "%eax"
+printOperand (Imm num)  = "#" ++ show num
+printOperand (Reg)  = "x0"
 
 printInstruction :: AsmInstruction -> String
-printInstruction (Mov source dest) = "  movl " ++ printOperand source ++ "," ++ printOperand dest ++ " \n"
+printInstruction (Mov source dest) = "  mov " ++ printOperand dest ++ "," ++ printOperand source ++ " \n"
 printInstruction (Ret) = "  ret \n"
 
 printAsmFunction :: AsmFunction -> String
 printAsmFunction (AsmFunction name instructions) = 
-    "  .globl " ++ name ++ "\n" ++
-    name ++ ": \n" ++
-    concatMap printInstruction instructions
+    "  .globl _" ++ name ++ "\n" ++
+    "_"++name ++ ": \n" ++
+    concatMap printInstruction instructions ++ "\n"
 
 printAsmProgram :: AsmProgram  -> String
 printAsmProgram (AsmProgram funcs) = concatMap printAsmFunction funcs
