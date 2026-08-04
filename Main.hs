@@ -8,9 +8,7 @@ import System.Process (callProcess)
 import Lexer
 import Parser
 import Asm
-import Distribution.Simple.Command (ShowOrParseArgs(ParseArgs))
-import System.Posix (fileAccess)
-import Foreign.C (errnoToIOError)
+import Tacky
 
 main :: IO ()
 main = do
@@ -39,8 +37,8 @@ run flag file = do
             putStrLn err
             exitFailure
           Right NoOutput -> exitSuccess
-          Right (PrintAst program) -> do
-            putStrLn (printProgram program)
+          Right (PrintTacky program) -> do
+            putStrLn (printTProgram program)
             exitSuccess
           Right (WriteAsm asmProgram) -> do
             let outFile = dropExtension file ++ ".s"
@@ -62,14 +60,17 @@ runCompiler stage contents = do
       if stage == ParseStage
         then Right (PrintAst program)
         else do
-          let asmProgram = getProgram program
+          let tackyProgram = getTProgram program
           if stage == CodegenStage
             then Right NoOutput
-            else Right (WriteAsm (printAsmProgram asmProgram))
+            else if stage == TackyStage
+                then Right (PrintTacky tackyProgram)
+                else Left "not implemented"
 
 data Result
   = NoOutput
   | PrintAst Program
+  | PrintTacky TProgram
   | WriteAsm String
   deriving (Show, Eq)
 
@@ -79,6 +80,7 @@ data Stage
   | LexStage
   | ParseStage
   | CodegenStage
+  | TackyStage
   | AsmStage
   deriving (Show, Eq)
 
@@ -88,14 +90,17 @@ getStage Nothing            = Right FullStage
 getStage (Just "--lex")     = Right LexStage
 getStage (Just "--parse")   = Right ParseStage
 getStage (Just "--codegen") = Right CodegenStage
+getStage (Just "--tacky")   = Right TackyStage
 getStage (Just "-S")        = Right AsmStage
 getStage (Just unknown)     = Left ("Error invalid flag: " ++ unknown)
 
 -- determine whether the given flag is a valid one or not:
-validFlag :: String -> Bool
+{-validFlag :: String -> Bool
 validFlag flag = case flag of
   "--lex"     -> True
   "--parse"   -> True
   "--codegen" -> True
+  "--tacky"   -> True
   "-S"        -> True
   _           -> False
+  -}

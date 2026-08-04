@@ -1,22 +1,35 @@
 module Parser where
 
 import Lexer (Token(..))
+import Distribution.Simple (KnownExtension(NegativeLiterals))
+
 
 -- a program is only a single function for now:
-data Program = Program Function
+data Program
+  = Program Function
   deriving (Show, Eq)
 
 -- a function has a name (the string) and a body (just a single statement for now),
 -- Function function takes these as two separate arguments not a tuple:
-data Function = Function String Statement
+data Function
+  = Function String Statement
   deriving (Show, Eq)
 
 -- there is only one kind of statement for now, a return:
-data Statement = Return Exp
+data Statement
+  = Return Exp
   deriving (Show, Eq)
 
 -- there is only one kind of expression for now, a constant int:
-data Exp = Constant Int
+data Exp
+   = Constant Int
+   | Unary UnOp Exp
+  deriving (Show, Eq)
+
+data UnOp
+  = Negate
+  | Complement
+  | Decrement
   deriving (Show, Eq)
 
 -- accept a list of tokens and return either an error message or a tuple containing the
@@ -24,12 +37,27 @@ data Exp = Constant Int
 parseExp :: [Token] -> Either String (Exp, [Token])
 -- split the constant num off and return the pair (num , remaining)
 parseExp (ConstantToken num : rem) = Right (Constant num, rem)
+parseExp (OpenParToken : rem) = do
+  (exp, rem1) <- parseExp rem
+  rem2 <- expect CloseParToken rem1 "Error - expected ')'"
+  Right (exp, rem2)
+parseExp (NegativeToken : rem) = do
+  (exp, rem1) <- parseExp rem
+  Right (Unary Negate exp, rem1)
+parseExp (TildeToken : rem) = do
+  (exp, rem1) <- parseExp rem
+  Right (Unary Complement exp, rem1)
 -- if called on anything that doesn't match the above pattern, return an error message:
 parseExp _ = Left "Error - expected an expression"
 
 -- print the parsed expression nicely using show:
 printExp :: Exp -> (String)
 printExp (Constant num)  = "Constant(" ++ show num ++ ")"
+printExp (Unary op exp) = printOp op ++ "(" ++ printExp exp ++ ")"
+
+printOp :: UnOp -> String
+printOp Negate = "Negate"
+printOp Complement = "Complement"
 
 parseStatement :: [Token] -> Either String (Statement, [Token])
 -- split the return keyword off and parse the first token of the remaining tokens: 
@@ -124,3 +152,6 @@ printToken CloseParToken          = "')'"
 printToken OpenBraceToken         = "'{'"
 printToken CloseBraceToken        = "'}'"
 printToken SemicolonToken         = "';'"
+printToken NegativeToken          = "'-'"
+printToken TildeToken             = "'~'"
+printToken DecrementToken         = "'--'"

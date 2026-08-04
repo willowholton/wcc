@@ -2,4 +2,6 @@
 *.hi
 *.o
 *.c
+*.s
+*.out
 tests/

@@ -15,6 +15,9 @@ data Token
     | OpenBraceToken
     | CloseBraceToken
     | SemicolonToken
+    | TildeToken
+    | NegativeToken
+    | DecrementToken
     -- Show allows us to print these new data types, eq allows us to check them for equality
     -- deriving tells the compiler to come up with these functions for us
     deriving (Show, Eq)
@@ -28,6 +31,8 @@ lexer [] = Right []
 lexer ('/':'/':x) = skipLine x
 lexer ('/':'*':x) = skipMultiLine x
 
+lexer ('-':'-':x) = addToken (DecrementToken, x)
+
 -- split input into first element c and all remaining elements x
 lexer (c:x)
   | isSpace c   = lexer x
@@ -36,6 +41,8 @@ lexer (c:x)
   | c == '{'    = addToken (OpenBraceToken, x)
   | c == '}'    = addToken (CloseBraceToken, x)
   | c == ';'    = addToken (SemicolonToken, x)
+  | c == '-'    = addToken (NegativeToken, x)
+  | c == '~'    = addToken (TildeToken, x)
   | isDigit c   = lexNum (c:x)
   | isAlpha c   = lexWord (c:x)
   | otherwise   = Left (" Error - Invalid character: " ++ [c])

@@ -1,16 +1,34 @@
 module Asm where
-import Parser
+import Tacky
 
 -- operands are only immediate values and one register for now:
 data AsmOperand
     = Imm Int
-    | Reg
+    | Reg AsmReg
+    | PseudoReg AsmPseudoReg
+    | Stack Int
+    deriving (Show, Eq)
+
+data AsmPseudoReg
+    = Pseudo String
+    deriving (Show, Eq)
+
+data AsmReg
+    = AX
+    | R10
+    deriving (Show, Eq)
+
+data AsmUnOp
+    = Neg
+    | Not
     deriving (Show, Eq)
 
 -- instructions are only move and return for now:
 data AsmInstruction
     = Mov AsmOperand AsmOperand -- move source -> destination
     | Ret
+    | AsmUnary AsmUnOp AsmOperand
+    | AllocStack Int
     deriving (Show, Eq)
 
 -- a function is a name and list of instructions
@@ -24,33 +42,58 @@ data AsmProgram
     deriving (Show, Eq)
 
 -- read an expression, return the corresponding operand:
-getOperand :: Exp -> AsmOperand
-getOperand (Constant num) = Imm num
+getOperand :: TValue -> AsmOperand
+getOperand (TConstant num) = Imm num
+-- temporary variables live in pseudoregisters:
+getOperand (Var (TVar name)) = PseudoReg (Pseudo name)
 
 -- read a statement, return list containing asm instruction(s):
-getInstruction :: Statement -> [AsmInstruction]
-getInstruction (Return exp) = [Mov (getOperand exp) Reg, Ret]
+getInstruction :: TInstruction -> [AsmInstruction]
+getInstruction (TReturn val) = [Mov (getOperand val) (Reg AX), Ret]
+getInstruction (TUnOp op src dest) = 
+    -- get the destination, which must be a var (can't move TO an immediate value)
+    let destOperand = getOperand (Var dest)
+        -- get corresponding asm operator:
+        asmOp = case op of
+            TNegate     -> Neg
+            TComplement -> Not
+    -- use that asm operator in the instructions:
+    in [Mov (getOperand src) destOperand, AsmUnary asmOp destOperand]
 
 -- read a function with a name and a statement, generate the corresponding asm function
-getFunction :: Function -> AsmFunction
-getFunction (Function name st) = AsmFunction name (getInstruction st)
+getFunction :: TFunction -> AsmFunction
+getFunction (TFunction name instList) = AsmFunction name (concatMap getInstruction instList)
 
-getProgram :: Program -> AsmProgram
-getProgram (Program func) = AsmProgram [getFunction func]
+getProgram :: TProgram -> AsmProgram
+getProgram (TProgram func) = AsmProgram [getFunction func]
 
-printOperand :: AsmOperand -> String
-printOperand (Imm num)  = "#" ++ show num
-printOperand (Reg)  = "x0"
+printAsmOperand :: AsmOperand -> String
+printAsmOperand (Imm num)  = "$" ++ show num
+printAsmOperand (Reg reg)  = printAsmReg reg
+-- stack index e.g. 8(%rbp)
+printAsmOperand (Stack num) = show num ++ "(%rbp)"
+-- pseudo register shouldn't ever actually get printed
+printAsmOperand (PseudoReg (Pseudo name))  = name
 
-printInstruction :: AsmInstruction -> String
-printInstruction (Mov source dest) = "  mov " ++ printOperand dest ++ "," ++ printOperand source ++ " \n"
-printInstruction (Ret) = "  ret \n"
+printAsmReg :: AsmReg -> String
+printAsmReg (AX) = "%eax"
+printAsmReg R10 = "%r10"
+
+printAsmUnOp :: AsmUnOp -> String
+printAsmUnOp Neg = "neg"
+printAsmUnOp Not = "not" 
+
+printAsmInstruction :: AsmInstruction -> String
+printAsmInstruction (Mov source dest) = "  movl " ++ printAsmOperand source ++ "," ++ printAsmOperand dest ++ " \n"
+printAsmInstruction (Ret) = "  ret \n"
+printAsmInstruction (AsmUnary op operand) = "  " ++ printAsmUnOp op ++ " " ++ printAsmOperand operand ++ "\n"
+printAsmInstruction (AllocStack num) = "not implemented"
 
 printAsmFunction :: AsmFunction -> String
 printAsmFunction (AsmFunction name instructions) = 
     "  .globl _" ++ name ++ "\n" ++
     "_"++name ++ ": \n" ++
-    concatMap printInstruction instructions ++ "\n"
+    concatMap printAsmInstruction instructions ++ "\n"
 
 printAsmProgram :: AsmProgram  -> String
 printAsmProgram (AsmProgram funcs) = concatMap printAsmFunction funcs
