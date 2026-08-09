@@ -9,6 +9,7 @@ import Lexer
 import Parser
 import Asm
 import Tacky
+import Fixup
 
 main :: IO ()
 main = do
@@ -65,7 +66,9 @@ runCompiler stage contents = do
             then Right NoOutput
             else if stage == TackyStage
                 then Right (PrintTacky tackyProgram)
-                else Left "not implemented"
+                else
+                  let asmProgram = fixupProgram (getProgram tackyProgram)
+                  in Right (WriteAsm (printAsmProgram asmProgram))
 
 data Result
   = NoOutput

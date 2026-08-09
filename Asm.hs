@@ -77,22 +77,31 @@ printAsmOperand (PseudoReg (Pseudo name))  = name
 
 printAsmReg :: AsmReg -> String
 printAsmReg (AX) = "%eax"
-printAsmReg R10 = "%r10"
+printAsmReg R10 = "%r10d"
 
 printAsmUnOp :: AsmUnOp -> String
-printAsmUnOp Neg = "neg"
-printAsmUnOp Not = "not" 
+printAsmUnOp Neg = "negl"
+printAsmUnOp Not = "notl" 
 
 printAsmInstruction :: AsmInstruction -> String
 printAsmInstruction (Mov source dest) = "  movl " ++ printAsmOperand source ++ "," ++ printAsmOperand dest ++ " \n"
-printAsmInstruction (Ret) = "  ret \n"
+printAsmInstruction (Ret) = 
+    -- epilogue:
+    "  movq %rbp, %rsp \n" ++
+    "  popq %rbp\n" ++
+    -- return:
+    "  ret \n"
 printAsmInstruction (AsmUnary op operand) = "  " ++ printAsmUnOp op ++ " " ++ printAsmOperand operand ++ "\n"
-printAsmInstruction (AllocStack num) = "not implemented"
+printAsmInstruction (AllocStack num) = "  subq " ++ "$" ++ show num ++ "," ++ "%rsp\n"
 
 printAsmFunction :: AsmFunction -> String
 printAsmFunction (AsmFunction name instructions) = 
     "  .globl _" ++ name ++ "\n" ++
     "_"++name ++ ": \n" ++
+    -- prologue:
+    "  pushq %rbp\n" ++
+    "  movq %rsp, %rbp\n" ++
+    -- instructions:
     concatMap printAsmInstruction instructions ++ "\n"
 
 printAsmProgram :: AsmProgram  -> String
