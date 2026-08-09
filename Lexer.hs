@@ -18,6 +18,10 @@ data Token
     | TildeToken
     | NegativeToken
     | DecrementToken
+    | AddToken
+    | MulToken
+    | DivToken
+    | ModToken
     -- Show allows us to print these new data types, eq allows us to check them for equality
     -- deriving tells the compiler to come up with these functions for us
     deriving (Show, Eq)
@@ -43,6 +47,10 @@ lexer (c:x)
   | c == ';'    = addToken (SemicolonToken, x)
   | c == '-'    = addToken (NegativeToken, x)
   | c == '~'    = addToken (TildeToken, x)
+  | c == '+'    = addToken (AddToken, x)
+  | c == '*'    = addToken (MulToken, x)
+  | c == '/'    = addToken (DivToken, x)
+  | c == '%'    = addToken (ModToken, x)
   | isDigit c   = lexNum (c:x)
   | isAlpha c   = lexWord (c:x)
   | otherwise   = Left (" Error - Invalid character: " ++ [c])
@@ -69,7 +77,6 @@ skipMultiLine :: String -> Either String [Token]
 skipMultiLine []          = lexer []
 skipMultiLine ('*':'/':x) = lexer x
 skipMultiLine (_:x)       = skipMultiLine x
-
 
 -- accept a string and return either an error message or a list of tokens:
 lexNum :: String -> Either String [Token]

@@ -1,7 +1,6 @@
 module Parser where
 
 import Lexer (Token(..))
-import Distribution.Simple (KnownExtension(NegativeLiterals))
 
 
 -- a program is only a single function for now:
@@ -20,48 +19,111 @@ data Statement
   = Return Exp
   deriving (Show, Eq)
 
--- there is only one kind of expression for now, a constant int:
 data Exp
    = Constant Int
    | Unary UnOp Exp
+   | Binary BinOp Exp Exp
   deriving (Show, Eq)
 
 data UnOp
   = Negate
   | Complement
-  | Decrement
+  deriving (Show, Eq)
+
+data BinOp
+  = Add
+  | Subtract
+  | Multiply
+  | Divide
+  | Modulo
   deriving (Show, Eq)
 
 -- accept a list of tokens and return either an error message or a tuple containing the
--- parsed expression and the remaining list of tokens:
-parseExp :: [Token] -> Either String (Exp, [Token])
--- split the constant num off and return the pair (num , remaining)
-parseExp (ConstantToken num : rem) = Right (Constant num, rem)
-parseExp (OpenParToken : rem) = do
-  (exp, rem1) <- parseExp rem
+-- parsed expression and the remaining list of tokens. Factors are now differentiated from
+-- expressions because they are discrete items: constants, parenthesized expressions, or unary ops.
+parseFactor :: [Token] -> Either String (Exp, [Token])
+-- split the constant num off and return the pair (num , remaining):
+parseFactor (ConstantToken num : rem) = Right (Constant num, rem)
+-- find a "(", parse the expression that follows, and look for it's matching ")":
+parseFactor (OpenParToken : rem) = do
+  -- parseExp needs to be given a minimum precedence to look at, so 0 here:
+  (exp, rem1) <- parseExp rem 0
   rem2 <- expect CloseParToken rem1 "Error - expected ')'"
   Right (exp, rem2)
-parseExp (NegativeToken : rem) = do
-  (exp, rem1) <- parseExp rem
+-- a negative sign means that anything following it must be parsed as a factor, i.e. a negative
+-- must be followed by a constant, a parenthesized expression, or another unary op. -~5 is legal,
+-- with or without parentheses:
+parseFactor (NegativeToken : rem) = do
+  (exp, rem1) <- parseFactor rem
   Right (Unary Negate exp, rem1)
-parseExp (TildeToken : rem) = do
-  (exp, rem1) <- parseExp rem
+-- same as negative, a ~ can be followed by any factor:
+parseFactor (TildeToken : rem) = do
+  (exp, rem1) <- parseFactor rem
   Right (Unary Complement exp, rem1)
 -- if called on anything that doesn't match the above pattern, return an error message:
-parseExp _ = Left "Error - expected an expression"
+parseFactor _ = Left "Error - expected an expression"
+
+-- helper function to peek at the next token without removing it:
+peek :: [Token] -> Maybe Token
+peek (t: _) = Just t
+peek []     = Nothing
+
+-- parse expression takes a list of tokens and a precedence value, returns either error or the newly parsed expression
+-- and a list of remaining tokens. 
+parseExp :: [Token] -> (Int -> (Either String (Exp, [Token])))
+parseExp tokens minPrec = do
+  -- parse the first factor from the list of tokens:
+  (fac, rem) <- parseFactor tokens
+  -- use the given minimum precedence to continue parsing factors using the helper function:
+  parseExpLoop minPrec fac rem
+
+-- helper function that takes a precedence value, an expression, and a list of remaining tokens. loops over the remaining tokens
+-- and builds onto the expression
+parseExpLoop :: Int -> (Exp -> ([Token] -> (Either String (Exp, [Token]))))
+parseExpLoop minPrec left rem =
+  case peek rem of
+    -- op is the next token found by peek, needs a guard to check that whatever peek found really is a binary op
+    -- and that it really does have greater precedence.
+    Just op | Just prec <- getPrecedence op, prec >= minPrec -> do
+      -- only consume the token that was peeked if the above condition holds:
+      (operator, rem1) <- expectBinOp rem "Error - expected a BinOp"
+      -- each successive operator must have strictly stronger precedence, so the right had side gets parsed
+      -- recursively with the new minimum precedence:
+      (right, rem2) <- parseExp rem1 (prec + 1)
+      -- The newly built expression is Binary operator left right, which gets passed back to continue parsing:
+      parseExpLoop minPrec (Binary operator left right) rem2
+    -- if there's nothing left to be parsed then return the left hand side:
+    _  -> Right (left, rem)
+
+expectBinOp :: [Token] -> (String -> (Either String (BinOp, [Token])))
+expectBinOp (AddToken : rem) _      = Right (Add, rem)
+expectBinOp (NegativeToken : rem) _ = Right (Subtract, rem)
+expectBinOp (MulToken : rem) _      = Right (Multiply, rem)
+expectBinOp (DivToken : rem) _      = Right (Divide, rem)
+expectBinOp (ModToken : rem) _      = Right (Modulo, rem)
+expectBinOp tokens err              = Left (err ++ " but found " ++ showTokens tokens)
 
 -- print the parsed expression nicely using show:
 printExp :: Exp -> (String)
 printExp (Constant num)  = "Constant(" ++ show num ++ ")"
-printExp (Unary op exp) = printOp op ++ "(" ++ printExp exp ++ ")"
+printExp (Unary op exp) = printUnOp op ++ "(" ++ printExp exp ++ ")"
+printExp (Binary op exp1 exp2) = printBinOp op ++ "(" ++ printExp exp1 ++ ", " ++ printExp exp2 ++ ")"
 
-printOp :: UnOp -> String
-printOp Negate = "Negate"
-printOp Complement = "Complement"
+printUnOp :: UnOp -> String
+printUnOp Negate = "Negate"
+printUnOp Complement = "Complement"
+
+printBinOp :: BinOp -> String
+printBinOp Add = "Add"
+printBinOp Subtract = "Subtract"
+printBinOp Multiply = "Multiply"
+printBinOp Divide = "Divide"
+printBinOp Modulo = "Modulo"
 
 parseStatement :: [Token] -> Either String (Statement, [Token])
--- split the return keyword off and parse the first token of the remaining tokens: 
-parseStatement (RetKeywordToken : rem) = case parseExp rem of
+-- split the return keyword off and parse the first token of the remaining tokens. parseExp needs
+-- a precedence value so it's given 0:
+parseStatement (RetKeywordToken : rem) = case parseExp rem 0 of
     -- if that token can't be parsed as an expression, return the error:
     Left err -> Left err
     -- if that token does match a valid expression:
@@ -126,12 +188,14 @@ parseProgram tokens = do
     [] -> Right (Program func)
     _  -> Left "Error - unexpection tokens after function end"
 
+-- print an entire program (just one function for now)
 printProgram :: Program  -> String
 printProgram (Program func) =
   "Program(\n" ++
   printFunction func 1 ++ "\n" ++
   ")"
 
+-- helper to create a nice 2 space indent for each level:
 indent :: Int -> String
 indent level = replicate (level * 2) ' '
 
@@ -155,3 +219,16 @@ printToken SemicolonToken         = "';'"
 printToken NegativeToken          = "'-'"
 printToken TildeToken             = "'~'"
 printToken DecrementToken         = "'--'"
+printToken AddToken               = "'+'"
+printToken MulToken               = "'*'"
+printToken DivToken               = "'/'"
+printToken ModToken               = "'%'"
+
+-- get precedence of a token, numbers are arbitrary but do leave room for future lower precedence if needed:
+getPrecedence :: Token -> Maybe Int
+getPrecedence AddToken      = Just 45
+getPrecedence NegativeToken = Just 45
+getPrecedence MulToken      = Just 50
+getPrecedence DivToken      = Just 50
+getPrecedence ModToken      = Just 50
+getPrecedence _             = Nothing

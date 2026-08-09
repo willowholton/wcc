@@ -38,6 +38,9 @@ run flag file = do
             putStrLn err
             exitFailure
           Right NoOutput -> exitSuccess
+          Right (PrintAst program) -> do
+            putStrLn (printProgram program)
+            exitSuccess
           Right (PrintTacky program) -> do
             putStrLn (printTProgram program)
             exitSuccess
