@@ -7,6 +7,14 @@ data TUnOperator
     | TNegate
     deriving (Show, Eq)
 
+data TBinOperator
+    = TAdd
+    | TSubtract
+    | TMultiply
+    | TDivide
+    | TModulo
+    deriving (Show, Eq)
+
 data TVar = TVar String
     deriving (Show, Eq)
 
@@ -18,6 +26,7 @@ data TValue
 data TInstruction
     = TReturn TValue
     | TUnOp TUnOperator TValue TVar -- operator, source, dest - dest must be a var not a constant
+    | TBinOp TBinOperator TValue TValue TVar -- operator, source1, source2, dest - dest must be a var not a constant
     deriving (Show, Eq)
 
 data TFunction
@@ -47,6 +56,18 @@ getTInstructions n (Unary op exp) =
             Complement -> TComplement
         newInst = TUnOp newOp nestedVal dest
     in (instList ++ [newInst], Var dest, n2)
+getTInstructions n (Binary op exp1 exp2) =
+    let (instList1, nestedVal1, n1) = getTInstructions n exp1
+        (instList2, nestedVal2, n2) = getTInstructions n1 exp2
+        (dest, n3) = newVarName n2
+        newOp = case op of
+            Add      -> TAdd
+            Subtract -> TSubtract
+            Multiply -> TMultiply
+            Divide   -> TDivide
+            Modulo   -> TModulo
+        newInst = TBinOp newOp nestedVal1 nestedVal2 dest
+    in (instList1 ++ instList2 ++ [newInst], Var dest, n3)
 
 -- take an int counter and a parsed statement, turn it into a flat list of instructions and an updated counter:
 getTStatement :: Int -> Statement -> ([TInstruction], Int)
@@ -76,12 +97,22 @@ printTValue (Var var) = printTVar var
 
 printTOperator :: TUnOperator -> String
 printTOperator (TComplement) = "Complement"
-printTOperator (TNegate) = "Negate"
+printTOperator (TNegate)     = "Negate"
+
+printTBinOperator :: TBinOperator -> String
+printTBinOperator (TAdd)      = "Add"
+printTBinOperator (TSubtract) = "Subtract"
+printTBinOperator (TMultiply) = "Multiply"
+printTBinOperator (TDivide)   = "Divide"
+printTBinOperator (TModulo)   = "Modulo"
+
 
 printTInstruction :: TInstruction -> String
 printTInstruction (TReturn val) = "Return(" ++ printTValue val ++")"
 printTInstruction (TUnOp op val var) = "Unary(" ++ printTOperator op ++
                                      "," ++ printTValue val ++ "," ++ printTVar var ++ ")"
+printTInstruction (TBinOp op val1 val2 var) = "Binary(" ++ printTBinOperator op ++
+                                     "," ++ printTValue val1 ++ "," ++ printTValue val2 ++ "," ++ printTVar var ++ ")"
 
 printTFunction :: TFunction -> String
 printTFunction (TFunction name instList) = "Function: " ++ name ++ "\n" ++ concatMap printTInstruction instList

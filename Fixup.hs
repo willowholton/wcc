@@ -2,7 +2,6 @@ module Fixup where
 
 import Asm
 import qualified Data.Map as Map
-import GHC.Base (TrName(TrNameD))
 
 -- fixup a single operand, takes a data table and an asmoperand, returns the updated operand and the updated table:
 fixupOperand :: Map.Map String Int -> (AsmOperand -> (AsmOperand, Map.Map String Int))
@@ -32,11 +31,27 @@ fixupInstruction table (Mov src dest) =
     -- return new instruction with fixed source and dest:
     in (Mov src1 dest1, table2)
 
+fixupInstruction table (AsmBinary op src dest) = 
+    -- fix both source operand and dest operand separately updating the table in between, in case source and dest
+    -- end up being the same register:
+    let (src1, table1) = fixupOperand table src
+        (dest1, table2) = fixupOperand table1 dest
+    -- return new instruction with fixed source and dest:
+    in (AsmBinary op src1 dest1, table2)
+
 fixupInstruction table (AsmUnary op oper) = 
     let (oper1, table1) = fixupOperand table oper
     in (AsmUnary op oper1, table1)
 
--- ret and allocstack are just themselves, no fixup needed:
+fixupInstruction table (Idiv src) = 
+    -- fix both source operand and dest operand separately updating the table in between, in case source and dest
+    -- end up being the same register:
+    let (src1, table1) = fixupOperand table src
+    -- return new instruction with fixed source and dest:
+    in (Idiv src1, table1)
+
+-- cdq, ret and allocstack are just themselves, no fixup needed:
+fixupInstruction table Cdq = (Cdq, table)
 fixupInstruction table Ret = (Ret, table)
 fixupInstruction table (AllocStack offset) = (AllocStack offset, table)
 
@@ -53,14 +68,30 @@ fixupMov (Mov src dest)
     | otherwise = [Mov src dest]
 fixupMov other = [other]
 
+-- idiv can't take a constant operand, e.g. idiv $3 needs to be rewritten as movl $3 %r10d, idivl %r10d:
+fixupIdiv :: AsmInstruction -> [AsmInstruction]
+fixupIdiv (Idiv (Imm src)) = [Mov (Imm src) (Reg R10), Idiv (Reg R10)]
+fixupIdiv other = [other]
+
+-- add and sub can't use memory addresses as both the source and destination:
+fixupAddSub :: AsmInstruction -> [AsmInstruction]
+fixupAddSub (AsmBinary Add (Stack num1) (Stack num2)) = [Mov (Stack num1) (Reg R10), AsmBinary Add (Reg R10) (Stack num2)]
+fixupAddSub (AsmBinary Sub (Stack num1) (Stack num2)) = [Mov (Stack num1) (Reg R10), AsmBinary Sub (Reg R10) (Stack num2)]
+fixupAddSub other = [other]
+
+-- mul can't have a memory address as the destination, use r11 to avoid collision with r10:
+fixupMul :: AsmInstruction -> [AsmInstruction]
+fixupMul (AsmBinary Mul src (Stack num)) = [Mov (Stack num) (Reg R11), AsmBinary Mul src (Reg R11), Mov (Reg R11) (Stack num)]
+fixupMul other = [other]
+
 -- take a data table and a list of instructions, return the fixed up instruction list and the updated table:
 fixupInstList :: Map.Map String Int -> ([AsmInstruction] -> ([AsmInstruction], Map.Map String Int))
 -- base case, empty list:
 fixupInstList table [] = ([], table)
 -- recursively fix up each instruction in the list by splitting off the first element one at a time:
-fixupInstList table (inst : rem) =
+fixupInstList table (inst : rem1) =
     let (inst1, table1) = fixupInstruction table inst
-        (remInsts, table2) = fixupInstList table1 rem
+        (remInsts, table2) = fixupInstList table1 rem1
     in ((inst1 : remInsts), table2)
 
 -- finally fix up a whole function, which is actually just a list of instructions:
@@ -68,12 +99,15 @@ fixupFunction :: AsmFunction -> AsmFunction
 fixupFunction (AsmFunction name insts) =
     -- fixupinstlist needs a table, so give it an empty table to fill:
     let (insts1, table) = fixupInstList Map.empty insts
-        -- fix any movs that need fixing:
+        -- fix any mov, add, sub, mul, and idiv instructions that need fixing:
         insts2 = concatMap fixupMov insts1
+        insts3 = concatMap fixupIdiv insts2
+        insts4 = concatMap fixupAddSub insts3
+        insts5 = concatMap fixupMul insts4
         -- calculate total size of the stack:
         stackSize = ((Map.size table) * 4)
     -- function needs to know exactly how much space to reserve on the stack FIRST, so add an alloc inst:
-    in AsmFunction name (AllocStack stackSize: insts2)
+    in AsmFunction name (AllocStack stackSize: insts5)
 
 -- an asmProgram is a list of asm functions, so fixupProgram uses map to call fixupFunction on each one: 
 fixupProgram :: AsmProgram -> AsmProgram

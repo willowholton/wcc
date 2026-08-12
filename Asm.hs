@@ -15,7 +15,9 @@ data AsmPseudoReg
 
 data AsmReg
     = AX
+    | DX
     | R10
+    | R11
     deriving (Show, Eq)
 
 data AsmUnOp
@@ -23,12 +25,20 @@ data AsmUnOp
     | Not
     deriving (Show, Eq)
 
--- instructions are only move and return for now:
+data AsmBinOp
+    = Add
+    | Sub
+    | Mul
+    deriving (Show, Eq)
+
 data AsmInstruction
-    = Mov AsmOperand AsmOperand -- move source -> destination
-    | Ret
+    = Mov AsmOperand AsmOperand
     | AsmUnary AsmUnOp AsmOperand
+    | AsmBinary AsmBinOp AsmOperand AsmOperand
+    | Idiv AsmOperand
+    | Cdq
     | AllocStack Int
+    | Ret
     deriving (Show, Eq)
 
 -- a function is a name and list of instructions
@@ -60,6 +70,21 @@ getInstruction (TUnOp op src dest) =
     -- use that asm operator in the instructions:
     in [Mov (getOperand src) destOperand, AsmUnary asmOp destOperand]
 
+getInstruction (TBinOp TAdd src1 src2 dest) = 
+    [(Mov (getOperand src1) (getOperand (Var dest))), (AsmBinary Add (getOperand src2) (getOperand (Var dest)))]
+
+getInstruction (TBinOp TSubtract src1 src2 dest) = 
+    [(Mov (getOperand src1) (getOperand (Var dest))), (AsmBinary Sub (getOperand src2) (getOperand (Var dest)))]
+
+getInstruction (TBinOp TMultiply src1 src2 dest) = 
+    [(Mov (getOperand src1) (getOperand (Var dest))), (AsmBinary Mul (getOperand src2) (getOperand (Var dest)))]
+
+getInstruction (TBinOp TDivide src1 src2 dest) =
+    [Mov (getOperand src1) (Reg AX), Cdq, Idiv (getOperand src2), Mov (Reg AX) (getOperand (Var dest))]
+
+getInstruction (TBinOp TModulo src1 src2 dest) =
+    [Mov (getOperand src1) (Reg AX), Cdq, Idiv (getOperand src2), Mov (Reg DX) (getOperand (Var dest))]
+
 -- read a function with a name and a statement, generate the corresponding asm function
 getFunction :: TFunction -> AsmFunction
 getFunction (TFunction name instList) = AsmFunction name (concatMap getInstruction instList)
@@ -76,23 +101,33 @@ printAsmOperand (Stack num) = show num ++ "(%rbp)"
 printAsmOperand (PseudoReg (Pseudo name))  = name
 
 printAsmReg :: AsmReg -> String
-printAsmReg (AX) = "%eax"
+printAsmReg AX = "%eax"
+printAsmReg DX = "%edx"
 printAsmReg R10 = "%r10d"
+printAsmReg R11 = "%r11d"
 
 printAsmUnOp :: AsmUnOp -> String
 printAsmUnOp Neg = "negl"
 printAsmUnOp Not = "notl" 
 
+printAsmBinOp :: AsmBinOp -> String
+printAsmBinOp Add = "addl"
+printAsmBinOp Sub = "subl" 
+printAsmBinOp Mul = "imull"
+
 printAsmInstruction :: AsmInstruction -> String
-printAsmInstruction (Mov source dest) = "  movl " ++ printAsmOperand source ++ "," ++ printAsmOperand dest ++ " \n"
+printAsmInstruction (Mov source dest) = "  movl " ++ printAsmOperand source ++ ", " ++ printAsmOperand dest ++ " \n"
+printAsmInstruction (AsmUnary op operand) = "  " ++ printAsmUnOp op ++ " " ++ printAsmOperand operand ++ "\n"
+printAsmInstruction (AsmBinary op operand1 operand2) = "  " ++ printAsmBinOp op ++ " " ++ printAsmOperand operand1 ++ ", " ++ printAsmOperand operand2 ++ "\n"
+printAsmInstruction (Cdq) = "  cdq\n"
+printAsmInstruction (Idiv operand) = "  idivl " ++ printAsmOperand operand ++ "\n"
+printAsmInstruction (AllocStack num) = "  subq " ++ "$" ++ show num ++ ", " ++ "%rsp\n"
 printAsmInstruction (Ret) = 
     -- epilogue:
     "  movq %rbp, %rsp \n" ++
     "  popq %rbp\n" ++
     -- return:
     "  ret \n"
-printAsmInstruction (AsmUnary op operand) = "  " ++ printAsmUnOp op ++ " " ++ printAsmOperand operand ++ "\n"
-printAsmInstruction (AllocStack num) = "  subq " ++ "$" ++ show num ++ "," ++ "%rsp\n"
 
 printAsmFunction :: AsmFunction -> String
 printAsmFunction (AsmFunction name instructions) = 
