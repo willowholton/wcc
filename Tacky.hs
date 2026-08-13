@@ -13,6 +13,11 @@ data TBinOperator
     | TMultiply
     | TDivide
     | TModulo
+    | TBitAnd
+    | TBitOr
+    | TBitXor
+    | TBitLShift
+    | TBitRShift
     deriving (Show, Eq)
 
 data TVar = TVar String
@@ -61,11 +66,16 @@ getTInstructions n (Binary op exp1 exp2) =
         (instList2, nestedVal2, n2) = getTInstructions n1 exp2
         (dest, n3) = newVarName n2
         newOp = case op of
-            Add      -> TAdd
-            Subtract -> TSubtract
-            Multiply -> TMultiply
-            Divide   -> TDivide
-            Modulo   -> TModulo
+            Add       -> TAdd
+            Subtract  -> TSubtract
+            Multiply  -> TMultiply
+            Divide    -> TDivide
+            Modulo    -> TModulo
+            BitAnd    -> TBitAnd
+            BitOr     -> TBitOr
+            BitXor    -> TBitXor
+            BitLShift -> TBitLShift
+            BitRShift -> TBitRShift
         newInst = TBinOp newOp nestedVal1 nestedVal2 dest
     in (instList1 ++ instList2 ++ [newInst], Var dest, n3)
 
@@ -105,7 +115,11 @@ printTBinOperator (TSubtract) = "Subtract"
 printTBinOperator (TMultiply) = "Multiply"
 printTBinOperator (TDivide)   = "Divide"
 printTBinOperator (TModulo)   = "Modulo"
-
+printTBinOperator (TBitAnd)   = "BitAnd"
+printTBinOperator (TBitOr)    = "BitOr"
+printTBinOperator (TBitXor)   = "BitXor"
+printTBinOperator (TBitLShift)   = "BitLShift"
+printTBinOperator (TBitRShift)   = "BitRShift"
 
 printTInstruction :: TInstruction -> String
 printTInstruction (TReturn val) = "Return(" ++ printTValue val ++")"

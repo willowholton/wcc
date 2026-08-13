@@ -18,6 +18,7 @@ data AsmReg
     | DX
     | R10
     | R11
+    | CL
     deriving (Show, Eq)
 
 data AsmUnOp
@@ -29,10 +30,16 @@ data AsmBinOp
     = Add
     | Sub
     | Mul
+    | BitAnd
+    | BitOr
+    | BitXor
+    | BitLShift
+    | BitRShift
     deriving (Show, Eq)
 
 data AsmInstruction
-    = Mov AsmOperand AsmOperand
+    = Mov AsmOperand AsmOperand  -- regular 32 bit mov
+    | MovB AsmOperand AsmOperand -- 8 bit mov
     | AsmUnary AsmUnOp AsmOperand
     | AsmBinary AsmBinOp AsmOperand AsmOperand
     | Idiv AsmOperand
@@ -85,6 +92,31 @@ getInstruction (TBinOp TDivide src1 src2 dest) =
 getInstruction (TBinOp TModulo src1 src2 dest) =
     [Mov (getOperand src1) (Reg AX), Cdq, Idiv (getOperand src2), Mov (Reg DX) (getOperand (Var dest))]
 
+getInstruction (TBinOp TBitAnd src1 src2 dest) = 
+    [(Mov (getOperand src1) (getOperand (Var dest))), (AsmBinary BitAnd (getOperand src2) (getOperand (Var dest)))]
+
+getInstruction (TBinOp TBitOr src1 src2 dest) = 
+    [(Mov (getOperand src1) (getOperand (Var dest))), (AsmBinary BitOr (getOperand src2) (getOperand (Var dest)))]
+    
+getInstruction (TBinOp TBitXor src1 src2 dest) = 
+    [(Mov (getOperand src1) (getOperand (Var dest))), (AsmBinary BitXor (getOperand src2) (getOperand (Var dest)))]
+
+-- shift by an immediate value just shifts:
+getInstruction (TBinOp TBitLShift src (TConstant amt) dest) = [(Mov (getOperand src) (getOperand (Var dest))), 
+                                                                 (AsmBinary BitLShift (Imm amt) (getOperand (Var dest)))]
+-- shift by anything else needs to use cl register:
+getInstruction (TBinOp TBitLShift src1 src2 dest) = [(Mov (getOperand src1) (getOperand (Var dest))), 
+                                                     (MovB (getOperand src2) (Reg CL)), 
+                                                     (AsmBinary BitLShift (Reg CL) (getOperand (Var dest)))]
+
+-- shift by an immediate value just shifts:
+getInstruction (TBinOp TBitRShift src (TConstant amt) dest) = [(Mov (getOperand src) (getOperand (Var dest))), 
+                                                                 (AsmBinary BitRShift (Imm amt) (getOperand (Var dest)))]
+-- shift by anything else needs to use cl register:
+getInstruction (TBinOp TBitRShift src1 src2 dest) = [(Mov (getOperand src1) (getOperand (Var dest))), 
+                                                     (MovB (getOperand src2) (Reg CL)), 
+                                                     (AsmBinary BitRShift (Reg CL) (getOperand (Var dest)))]
+
 -- read a function with a name and a statement, generate the corresponding asm function
 getFunction :: TFunction -> AsmFunction
 getFunction (TFunction name instList) = AsmFunction name (concatMap getInstruction instList)
@@ -101,21 +133,28 @@ printAsmOperand (Stack num) = show num ++ "(%rbp)"
 printAsmOperand (PseudoReg (Pseudo name))  = name
 
 printAsmReg :: AsmReg -> String
-printAsmReg AX = "%eax"
-printAsmReg DX = "%edx"
+printAsmReg AX  = "%eax"
+printAsmReg DX  = "%edx"
 printAsmReg R10 = "%r10d"
 printAsmReg R11 = "%r11d"
+printAsmReg CL  = "%cl"
 
 printAsmUnOp :: AsmUnOp -> String
 printAsmUnOp Neg = "negl"
-printAsmUnOp Not = "notl" 
+printAsmUnOp Not = "notl"
 
 printAsmBinOp :: AsmBinOp -> String
-printAsmBinOp Add = "addl"
-printAsmBinOp Sub = "subl" 
-printAsmBinOp Mul = "imull"
+printAsmBinOp Add        = "addl"
+printAsmBinOp Sub        = "subl" 
+printAsmBinOp Mul        = "imull"
+printAsmBinOp BitAnd     = "andl"
+printAsmBinOp BitOr      = "orl"
+printAsmBinOp BitXor     = "xorl"
+printAsmBinOp BitLShift  = "sall" -- arithmetic shifts not shl and shr
+printAsmBinOp BitRShift  = "sarl"
 
 printAsmInstruction :: AsmInstruction -> String
+printAsmInstruction (MovB source dest) = "  movb " ++ printAsmOperand source ++ ", " ++ printAsmOperand dest ++ " \n"
 printAsmInstruction (Mov source dest) = "  movl " ++ printAsmOperand source ++ ", " ++ printAsmOperand dest ++ " \n"
 printAsmInstruction (AsmUnary op operand) = "  " ++ printAsmUnOp op ++ " " ++ printAsmOperand operand ++ "\n"
 printAsmInstruction (AsmBinary op operand1 operand2) = "  " ++ printAsmBinOp op ++ " " ++ printAsmOperand operand1 ++ ", " ++ printAsmOperand operand2 ++ "\n"

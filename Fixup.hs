@@ -23,6 +23,14 @@ fixupOperand table other = (other, table)
 -- go through one instruction and fixup each operand, returning an updated instruction and an updated map:
 fixupInstruction :: Map.Map String Int -> AsmInstruction -> (AsmInstruction, Map.Map String Int)
 -- given a mov src dest instruction,
+fixupInstruction table (MovB src dest) = 
+    -- fix both source operand and dest operand separately updating the table in between, in case source and dest
+    -- end up being the same register:
+    let (src1, table1) = fixupOperand table src
+        (dest1, table2) = fixupOperand table1 dest
+    -- return new instruction with fixed source and dest:
+    in (MovB src1 dest1, table2)
+
 fixupInstruction table (Mov src dest) = 
     -- fix both source operand and dest operand separately updating the table in between, in case source and dest
     -- end up being the same register:
@@ -79,6 +87,21 @@ fixupAddSub (AsmBinary Add (Stack num1) (Stack num2)) = [Mov (Stack num1) (Reg R
 fixupAddSub (AsmBinary Sub (Stack num1) (Stack num2)) = [Mov (Stack num1) (Reg R10), AsmBinary Sub (Reg R10) (Stack num2)]
 fixupAddSub other = [other]
 
+-- and, or, and xor can't do memory-memory operations, also can't have an immediate value as the dest:
+fixupBitwise :: AsmInstruction -> [AsmInstruction]
+fixupBitwise (AsmBinary BitAnd (Stack num1) (Stack num2)) = [Mov (Stack num1) (Reg R10), AsmBinary BitAnd (Reg R10) (Stack num2)]
+fixupBitwise (AsmBinary BitXor (Stack num1) (Stack num2)) = [Mov (Stack num1) (Reg R10), AsmBinary BitXor (Reg R10) (Stack num2)]
+fixupBitwise (AsmBinary BitOr (Stack num1) (Stack num2))  = [Mov (Stack num1) (Reg R10), AsmBinary BitOr (Reg R10) (Stack num2)]
+fixupBitwise other = [other]
+
+-- Shifts can't have a memory address as the destination if the amount to be shifted is in the cl register:
+fixupShifts :: AsmInstruction -> [AsmInstruction]
+fixupShifts (AsmBinary BitLShift src (Stack num)) = [(Mov (Stack num) (Reg R10)),
+                                                     (AsmBinary BitLShift) src (Reg R10), Mov (Reg R10) (Stack num)]
+fixupShifts (AsmBinary BitRShift src (Stack num)) = [(Mov (Stack num) (Reg R10)),
+                                                     (AsmBinary BitRShift) src (Reg R10), Mov (Reg R10) (Stack num)]
+fixupShifts other = [other]                                                    
+
 -- mul can't have a memory address as the destination, use r11 to avoid collision with r10:
 fixupMul :: AsmInstruction -> [AsmInstruction]
 fixupMul (AsmBinary Mul src (Stack num)) = [Mov (Stack num) (Reg R11), AsmBinary Mul src (Reg R11), Mov (Reg R11) (Stack num)]
@@ -104,10 +127,12 @@ fixupFunction (AsmFunction name insts) =
         insts3 = concatMap fixupIdiv insts2
         insts4 = concatMap fixupAddSub insts3
         insts5 = concatMap fixupMul insts4
+        insts6 = concatMap fixupBitwise insts5
+        insts7 = concatMap fixupShifts insts6
         -- calculate total size of the stack:
         stackSize = ((Map.size table) * 4)
     -- function needs to know exactly how much space to reserve on the stack FIRST, so add an alloc inst:
-    in AsmFunction name (AllocStack stackSize: insts5)
+    in AsmFunction name (AllocStack stackSize: insts7)
 
 -- an asmProgram is a list of asm functions, so fixupProgram uses map to call fixupFunction on each one: 
 fixupProgram :: AsmProgram -> AsmProgram

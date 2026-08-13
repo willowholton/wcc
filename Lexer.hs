@@ -15,13 +15,18 @@ data Token
     | OpenBraceToken
     | CloseBraceToken
     | SemicolonToken
-    | TildeToken
     | NegativeToken
     | DecrementToken
     | AddToken
     | MulToken
     | DivToken
     | ModToken
+    | AndToken
+    | NotToken
+    | OrToken
+    | XorToken
+    | LShiftToken
+    | RShiftToken
     -- Show allows us to print these new data types, eq allows us to check them for equality
     -- deriving tells the compiler to come up with these functions for us
     deriving (Show, Eq)
@@ -36,6 +41,8 @@ lexer ('/':'/':x) = skipLine x
 lexer ('/':'*':x) = skipMultiLine x
 
 lexer ('-':'-':x) = addToken (DecrementToken, x)
+lexer ('<':'<':x) = addToken (LShiftToken, x)
+lexer ('>':'>':x) = addToken (RShiftToken, x)
 
 -- split input into first element c and all remaining elements x
 lexer (c:x)
@@ -46,11 +53,14 @@ lexer (c:x)
   | c == '}'    = addToken (CloseBraceToken, x)
   | c == ';'    = addToken (SemicolonToken, x)
   | c == '-'    = addToken (NegativeToken, x)
-  | c == '~'    = addToken (TildeToken, x)
   | c == '+'    = addToken (AddToken, x)
   | c == '*'    = addToken (MulToken, x)
   | c == '/'    = addToken (DivToken, x)
   | c == '%'    = addToken (ModToken, x)
+  | c == '&'    = addToken (AndToken, x)
+  | c == '~'    = addToken (NotToken, x)
+  | c == '|'    = addToken (OrToken, x)
+  | c == '^'    = addToken (XorToken, x)
   | isDigit c   = lexNum (c:x)
   | isAlpha c   = lexWord (c:x)
   | otherwise   = Left (" Error - Invalid character: " ++ [c])

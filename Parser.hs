@@ -36,6 +36,11 @@ data BinOp
   | Multiply
   | Divide
   | Modulo
+  | BitAnd
+  | BitOr
+  | BitXor
+  | BitLShift
+  | BitRShift
   deriving (Show, Eq)
 
 -- accept a list of tokens and return either an error message or a tuple containing the
@@ -57,7 +62,7 @@ parseFactor (NegativeToken : rem) = do
   (exp, rem1) <- parseFactor rem
   Right (Unary Negate exp, rem1)
 -- same as negative, a ~ can be followed by any factor:
-parseFactor (TildeToken : rem) = do
+parseFactor (NotToken : rem) = do
   (exp, rem1) <- parseFactor rem
   Right (Unary Complement exp, rem1)
 -- if called on anything that doesn't match the above pattern, return an error message:
@@ -101,6 +106,11 @@ expectBinOp (NegativeToken : rem) _ = Right (Subtract, rem)
 expectBinOp (MulToken : rem) _      = Right (Multiply, rem)
 expectBinOp (DivToken : rem) _      = Right (Divide, rem)
 expectBinOp (ModToken : rem) _      = Right (Modulo, rem)
+expectBinOp (AndToken : rem) _      = Right (BitAnd, rem)
+expectBinOp (OrToken : rem) _       = Right (BitOr, rem)
+expectBinOp (XorToken : rem) _      = Right (BitXor, rem)
+expectBinOp (LShiftToken : rem) _   = Right (BitLShift, rem)
+expectBinOp (RShiftToken : rem) _   = Right (BitRShift, rem)
 expectBinOp tokens err              = Left (err ++ " but found " ++ showTokens tokens)
 
 -- print the parsed expression nicely using show:
@@ -109,16 +119,20 @@ printExp (Constant num)  = "Constant(" ++ show num ++ ")"
 printExp (Unary op exp) = printUnOp op ++ "(" ++ printExp exp ++ ")"
 printExp (Binary op exp1 exp2) = printBinOp op ++ "(" ++ printExp exp1 ++ ", " ++ printExp exp2 ++ ")"
 
+-- print unary and binary operators:
 printUnOp :: UnOp -> String
-printUnOp Negate = "Negate"
+printUnOp Negate     = "Negate"
 printUnOp Complement = "Complement"
 
 printBinOp :: BinOp -> String
-printBinOp Add = "Add"
+printBinOp Add      = "Add"
 printBinOp Subtract = "Subtract"
 printBinOp Multiply = "Multiply"
-printBinOp Divide = "Divide"
-printBinOp Modulo = "Modulo"
+printBinOp Divide   = "Divide"
+printBinOp Modulo   = "Modulo"
+printBinOp BitAnd   = "And"
+printBinOp BitOr    = "Or"
+printBinOp BitXor   = "Xor"
 
 parseStatement :: [Token] -> Either String (Statement, [Token])
 -- split the return keyword off and parse the first token of the remaining tokens. parseExp needs
@@ -157,6 +171,7 @@ parseFunction tokens = do
     rem7 <- expect CloseBraceToken rem6 "Error - expected '}'"
     Right (Function name st, rem7)
 
+-- print function using printStatement:
 printFunction :: Function -> Int -> String
 printFunction (Function name st) depth = 
   indent depth ++ "Function(\n" ++
@@ -217,18 +232,29 @@ printToken OpenBraceToken         = "'{'"
 printToken CloseBraceToken        = "'}'"
 printToken SemicolonToken         = "';'"
 printToken NegativeToken          = "'-'"
-printToken TildeToken             = "'~'"
 printToken DecrementToken         = "'--'"
 printToken AddToken               = "'+'"
 printToken MulToken               = "'*'"
 printToken DivToken               = "'/'"
 printToken ModToken               = "'%'"
+printToken AndToken               = "'&'"
+printToken NotToken               = "'~'"
+printToken OrToken                = "'|'"
+printToken XorToken               = "'^'"
+printToken LShiftToken            = "'<<'"
+printToken RShiftToken            = "'>>'"
 
 -- get precedence of a token, numbers are arbitrary but do leave room for future lower precedence if needed:
 getPrecedence :: Token -> Maybe Int
-getPrecedence AddToken      = Just 45
-getPrecedence NegativeToken = Just 45
 getPrecedence MulToken      = Just 50
 getPrecedence DivToken      = Just 50
 getPrecedence ModToken      = Just 50
+getPrecedence AddToken      = Just 45
+getPrecedence NegativeToken = Just 45
+-- The shifts, and, xor, or in decreasing order of precedence:
+getPrecedence LShiftToken   = Just 40
+getPrecedence RShiftToken   = Just 40
+getPrecedence AndToken      = Just 35
+getPrecedence XorToken      = Just 30
+getPrecedence OrToken       = Just 25
 getPrecedence _             = Nothing
