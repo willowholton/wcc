@@ -2,9 +2,10 @@ module Main (main) where
 
 import System.Exit (exitSuccess, exitFailure)
 import System.Environment (getArgs)
-import System.Directory (doesFileExist)
+import System.Directory (doesFileExist, removeFile)
 import System.FilePath (dropExtension)
 import System.Process (callProcess)
+import System.IO (openTempFile, hPutStrLn, hClose)
 import Lexer
 import Parser
 import Asm
@@ -19,6 +20,18 @@ main = do
     [flag, file] -> run (Just flag) file
     _            -> exitFailure
 
+-- helper that uses gccs preprocessor to deal # statements first. creates a temporary file, reads it into contents,
+-- and then deletes the temp file:
+preprocess:: FilePath -> IO String
+preprocess file = do
+  -- temp file will be where gcc puts our preprocessed file
+  (path, name) <- openTempFile "." "preprocessed.c"
+  -- -E indicates preprocessing only, -P removes line markers and other things wcc can't deal with:
+  callProcess "gcc" ["-E", "-P", file, "-o", path] 
+  contents <- readFile path
+  hClose name
+  removeFile path
+  return contents
 
 run :: Maybe String -> FilePath -> IO ()
 run flag file = do
@@ -32,7 +45,7 @@ run flag file = do
         putStrLn err
         exitFailure
       Right stage -> do
-        contents <- readFile file
+        contents <- preprocess file
         case runCompiler stage contents of
           Left err -> do
             putStrLn err
