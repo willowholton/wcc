@@ -5,7 +5,7 @@ import System.Environment (getArgs)
 import System.Directory (doesFileExist, removeFile)
 import System.FilePath (dropExtension)
 import System.Process (callProcess)
-import System.IO (openTempFile, hPutStrLn, hClose)
+import System.IO (openTempFile, hClose)
 import Lexer
 import Parser
 import Asm
@@ -33,6 +33,7 @@ preprocess file = do
   removeFile path
   return contents
 
+-- actually run compiler with maybe flag:
 run :: Maybe String -> FilePath -> IO ()
 run flag file = do
   exists <- doesFileExist file
@@ -46,22 +47,29 @@ run flag file = do
         exitFailure
       Right stage -> do
         contents <- preprocess file
+        -- run compiler with preprocessed file up to indicated stage:
         case runCompiler stage contents of
           Left err -> do
             putStrLn err
             exitFailure
+          -- no output stage, do nothing:
           Right NoOutput -> exitSuccess
+          -- print AST only:
           Right (PrintAst program) -> do
             putStrLn (printProgram program)
             exitSuccess
+          -- print intermediate representation:
           Right (PrintTacky program) -> do
             putStrLn (printTProgram program)
             exitSuccess
+          -- write assembly to output file:
           Right (WriteAsm asmProgram) -> do
             let outFile = dropExtension file ++ ".s"
             writeFile outFile asmProgram
+            -- if assembly only stage, do nothing:
             if stage == AsmStage
               then exitSuccess
+              -- otherwise call gcc to compile from asm:
               else do
                 callProcess "gcc" [outFile, "-o", dropExtension file]
                 exitSuccess
@@ -69,22 +77,27 @@ run flag file = do
 
 runCompiler :: Stage -> (String -> (Either String Result))
 runCompiler stage contents = do
+  -- lex only:
   tokens  <- lexer contents
   if stage == LexStage
     then Right NoOutput
+    -- then move on to parsing:
     else do
       program <- parseProgram tokens
       if stage == ParseStage
         then Right (PrintAst program)
+        -- then to intermediate representation:
         else do
           let tackyProgram = getTProgram program
           if stage == CodegenStage
             then Right NoOutput
             else if stage == TackyStage
                 then Right (PrintTacky tackyProgram)
+                -- then to asm:
                 else
                   let asmProgram = fixupProgram (getProgram tackyProgram)
                   in Right (WriteAsm (printAsmProgram asmProgram))
+
 
 data Result
   = NoOutput
@@ -112,14 +125,3 @@ getStage (Just "--codegen") = Right CodegenStage
 getStage (Just "--tacky")   = Right TackyStage
 getStage (Just "-S")        = Right AsmStage
 getStage (Just unknown)     = Left ("Error invalid flag: " ++ unknown)
-
--- determine whether the given flag is a valid one or not:
-{-validFlag :: String -> Bool
-validFlag flag = case flag of
-  "--lex"     -> True
-  "--parse"   -> True
-  "--codegen" -> True
-  "--tacky"   -> True
-  "-S"        -> True
-  _           -> False
-  -}

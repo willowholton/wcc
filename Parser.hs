@@ -28,6 +28,7 @@ data Exp
 data UnOp
   = Negate
   | Complement
+  | Not
   deriving (Show, Eq)
 
 data BinOp
@@ -36,11 +37,21 @@ data BinOp
   | Multiply
   | Divide
   | Modulo
+  -- bitwise operators:
   | BitAnd
   | BitOr
   | BitXor
   | BitLShift
   | BitRShift
+  -- logical operators:
+  | And
+  | Or
+  | Equal
+  | NEqual
+  | LThan
+  | GThan
+  | LEQ
+  | GEQ
   deriving (Show, Eq)
 
 -- accept a list of tokens and return either an error message or a tuple containing the
@@ -62,9 +73,13 @@ parseFactor (NegativeToken : rem) = do
   (exp, rem1) <- parseFactor rem
   Right (Unary Negate exp, rem1)
 -- same as negative, a ~ can be followed by any factor:
-parseFactor (NotToken : rem) = do
+parseFactor (ComplementToken : rem) = do
   (exp, rem1) <- parseFactor rem
   Right (Unary Complement exp, rem1)
+-- same as above, a ! can be followed by any factor:
+parseFactor (NotToken : rem) = do
+  (exp, rem1) <- parseFactor rem
+  Right (Unary Not exp, rem1)
 -- if called on anything that doesn't match the above pattern, return an error message:
 parseFactor _ = Left "Error - expected an expression"
 
@@ -111,6 +126,14 @@ expectBinOp (OrToken : rem) _       = Right (BitOr, rem)
 expectBinOp (XorToken : rem) _      = Right (BitXor, rem)
 expectBinOp (LShiftToken : rem) _   = Right (BitLShift, rem)
 expectBinOp (RShiftToken : rem) _   = Right (BitRShift, rem)
+expectBinOp (LAndToken : rem) _     = Right (And, rem)
+expectBinOp (LOrToken : rem) _      = Right (Or, rem)
+expectBinOp (EqToken : rem) _       = Right (Equal, rem)
+expectBinOp (NEqToken : rem) _      = Right (NEqual, rem)
+expectBinOp (LThanToken : rem) _    = Right (LThan, rem)
+expectBinOp (GThanToken : rem) _    = Right (GThan, rem)
+expectBinOp (LEqToken : rem) _      = Right (LEQ, rem)
+expectBinOp (GEqToken : rem) _      = Right (GEQ, rem)
 expectBinOp tokens err              = Left (err ++ " but found " ++ showTokens tokens)
 
 -- print the parsed expression nicely using show:
@@ -123,6 +146,7 @@ printExp (Binary op exp1 exp2) = printBinOp op ++ "(" ++ printExp exp1 ++ ", " +
 printUnOp :: UnOp -> String
 printUnOp Negate     = "Negate"
 printUnOp Complement = "Complement"
+printUnOp Not        = "Not"
 
 printBinOp :: BinOp -> String
 printBinOp Add      = "Add"
@@ -130,9 +154,17 @@ printBinOp Subtract = "Subtract"
 printBinOp Multiply = "Multiply"
 printBinOp Divide   = "Divide"
 printBinOp Modulo   = "Modulo"
-printBinOp BitAnd   = "And"
-printBinOp BitOr    = "Or"
+printBinOp BitAnd   = "BitAnd"
+printBinOp BitOr    = "BitOr"
 printBinOp BitXor   = "Xor"
+printBinOp And      = "And"
+printBinOp Or       = "Or"
+printBinOp Equal    = "Equal"
+printBinOp NEqual   = "Not Equal"
+printBinOp LThan    = "Less Than"
+printBinOp GThan    = "Greater Than"
+printBinOp LEQ      = "Less or Equal"
+printBinOp GEQ      = "Greater or Equal"
 
 parseStatement :: [Token] -> Either String (Statement, [Token])
 -- split the return keyword off and parse the first token of the remaining tokens. parseExp needs
@@ -238,23 +270,43 @@ printToken MulToken               = "'*'"
 printToken DivToken               = "'/'"
 printToken ModToken               = "'%'"
 printToken AndToken               = "'&'"
-printToken NotToken               = "'~'"
+printToken ComplementToken        = "'~'"
 printToken OrToken                = "'|'"
 printToken XorToken               = "'^'"
 printToken LShiftToken            = "'<<'"
 printToken RShiftToken            = "'>>'"
+printToken LAndToken              = "'&&'"
+printToken LOrToken               = "'||'"
+printToken EqToken                = "'=='"
+printToken NEqToken               = "'!='"
+printToken LThanToken             = "'<'"
+printToken GThanToken             = "'>'"
+printToken LEqToken               = "'<='"
+printToken GEqToken               = "'>='"
 
 -- get precedence of a token, numbers are arbitrary but do leave room for future lower precedence if needed:
 getPrecedence :: Token -> Maybe Int
+-- binary operators mul, div, mod, then add and sub:
 getPrecedence MulToken      = Just 50
 getPrecedence DivToken      = Just 50
 getPrecedence ModToken      = Just 50
 getPrecedence AddToken      = Just 45
 getPrecedence NegativeToken = Just 45
--- The shifts, and, xor, or in decreasing order of precedence:
+-- bitwise shifts:
 getPrecedence LShiftToken   = Just 40
 getPrecedence RShiftToken   = Just 40
-getPrecedence AndToken      = Just 35
-getPrecedence XorToken      = Just 30
-getPrecedence OrToken       = Just 25
+-- relational operators:
+getPrecedence LThanToken    = Just 35
+getPrecedence GThanToken    = Just 35
+getPrecedence LEqToken      = Just 35
+getPrecedence GEqToken      = Just 35
+getPrecedence EqToken       = Just 30
+getPrecedence NEqToken      = Just 30
+-- bitwise and, xor, or:
+getPrecedence AndToken      = Just 25
+getPrecedence XorToken      = Just 20
+getPrecedence OrToken       = Just 15
+-- logical and, or
+getPrecedence LAndToken     = Just 10
+getPrecedence LOrToken      = Just 5
 getPrecedence _             = Nothing

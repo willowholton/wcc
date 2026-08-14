@@ -22,11 +22,20 @@ data Token
     | DivToken
     | ModToken
     | AndToken
-    | NotToken
+    | ComplementToken
     | OrToken
     | XorToken
     | LShiftToken
     | RShiftToken
+    | LAndToken
+    | LOrToken
+    | EqToken
+    | NEqToken
+    | LEqToken
+    | GEqToken
+    | NotToken
+    | LThanToken
+    | GThanToken
     -- Show allows us to print these new data types, eq allows us to check them for equality
     -- deriving tells the compiler to come up with these functions for us
     deriving (Show, Eq)
@@ -39,10 +48,15 @@ lexer [] = Right []
 -- check for comments:
 lexer ('/':'/':x) = skipLine x
 lexer ('/':'*':x) = skipMultiLine x
-
 lexer ('-':'-':x) = addToken (DecrementToken, x)
 lexer ('<':'<':x) = addToken (LShiftToken, x)
 lexer ('>':'>':x) = addToken (RShiftToken, x)
+lexer ('&':'&':x) = addToken (LAndToken, x)
+lexer ('|':'|':x) = addToken (LOrToken, x)
+lexer ('=':'=':x) = addToken (EqToken, x)
+lexer ('!':'=':x) = addToken (NEqToken, x)
+lexer ('<':'=':x) = addToken (LEqToken, x)
+lexer ('>':'=':x) = addToken (GEqToken, x)
 
 -- split input into first element c and all remaining elements x
 lexer (c:x)
@@ -58,9 +72,12 @@ lexer (c:x)
   | c == '/'    = addToken (DivToken, x)
   | c == '%'    = addToken (ModToken, x)
   | c == '&'    = addToken (AndToken, x)
-  | c == '~'    = addToken (NotToken, x)
+  | c == '~'    = addToken (ComplementToken, x)
   | c == '|'    = addToken (OrToken, x)
   | c == '^'    = addToken (XorToken, x)
+  | c == '!'    = addToken (NotToken, x)
+  | c == '<'    = addToken (LThanToken, x)
+  | c == '>'    = addToken (GThanToken, x)
   | isDigit c   = lexNum (c:x)
   | isAlpha c   = lexWord (c:x)
   | otherwise   = Left (" Error - Invalid character: " ++ [c])
