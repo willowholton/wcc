@@ -37,15 +37,19 @@ data TValue
     | Var TVar
     deriving (Show, Eq)
 
+data TLabel
+    = TLabel String
+    deriving (Show, Eq)
+
 data TInstruction
     = TReturn TValue
     | TUnOp TUnOperator TValue TVar -- operator, source, dest - dest must be a var not a constant
     | TBinOp TBinOperator TValue TValue TVar -- operator, source1, source2, dest - dest must be a var not a constant
     | TCopy TValue TValue -- copy will copy the result of an && or || expression to a temporary value
-    | TJump TVar -- unconditional jump
-    | TJumpIfZero TValue TVar -- jump if first arg is zero, to second arg target
-    | TJumpNotZero TValue TVar -- jump if not zero
-    | TLabel TVar -- label to jump to
+    | TJump TLabel -- unconditional jump
+    | TJumpIfZero TValue TLabel -- jump if first arg is zero, to second arg target
+    | TJumpNotZero TValue TLabel -- jump if not zero
+    | TLabelInst TLabel -- label to jump to
     deriving (Show, Eq)
 
 data TFunction
@@ -95,11 +99,11 @@ getTInstructions n (Binary And exp1 exp2) =
         -- then evaluate the second expression:
         (instList2, nestedVal2, n5) = getTInstructions n4 exp2
         -- combine the sequence of expressions into one ugly long list:
-        instList = instList1 ++ [TJumpIfZero nestedVal1 (TVar ifFalseLabel)] ++ 
-                   instList2 ++ [TJumpIfZero nestedVal2 (TVar ifFalseLabel)] ++
-                   [TCopy (TConstant 1) (Var result)] ++ [TJump (TVar endLabel)] ++
-                   [TLabel (TVar ifFalseLabel)] ++ [TCopy (TConstant 0) (Var result)] ++
-                   [TLabel (TVar endLabel)]
+        instList = instList1 ++ [TJumpIfZero nestedVal1 (TLabel ifFalseLabel)] ++ 
+                   instList2 ++ [TJumpIfZero nestedVal2 (TLabel ifFalseLabel)] ++
+                   [TCopy (TConstant 1) (Var result)] ++ [TJump (TLabel endLabel)] ++
+                   [TLabelInst (TLabel ifFalseLabel)] ++ [TCopy (TConstant 0) (Var result)] ++
+                   [TLabelInst (TLabel endLabel)]
     in (instList, Var result, n5)
 
 -- || also short circuits, so needs to jump if the first expression evaluates to TRUE:
@@ -116,11 +120,11 @@ getTInstructions n (Binary Or exp1 exp2) =
         -- then evaluate the second expression:
         (instList2, nestedVal2, n5) = getTInstructions n4 exp2
         -- combine the sequence of expressions into one ugly long list:
-        instList = instList1 ++ [TJumpNotZero nestedVal1 (TVar ifTrueLabel)] ++ 
-                   instList2 ++ [TJumpNotZero nestedVal2 (TVar ifTrueLabel)] ++
-                   [TCopy (TConstant 0) (Var result)] ++ [TJump (TVar endLabel)] ++
-                   [TLabel (TVar ifTrueLabel)] ++ [TCopy (TConstant 1) (Var result)] ++
-                   [TLabel (TVar endLabel)]
+        instList = instList1 ++ [TJumpNotZero nestedVal1 (TLabel ifTrueLabel)] ++ 
+                   instList2 ++ [TJumpNotZero nestedVal2 (TLabel ifTrueLabel)] ++
+                   [TCopy (TConstant 0) (Var result)] ++ [TJump (TLabel endLabel)] ++
+                   [TLabelInst (TLabel ifTrueLabel)] ++ [TCopy (TConstant 1) (Var result)] ++
+                   [TLabelInst (TLabel endLabel)]
     in (instList, Var result, n5)
 
 -- all other binary operations get evaluated normally:
@@ -170,6 +174,9 @@ getTProgram (Program func) = TProgram (getTFunction func)
 printTVar :: TVar -> String
 printTVar (TVar name) = "Var(\"" ++ name ++ "\")"
 
+printTLabel :: TLabel -> String
+printTLabel (TLabel name) = "Label(\"" ++ name ++ "\")"
+
 printTValue :: TValue -> String
 printTValue (TConstant n) = "Constant(" ++ show n ++ ")"
 printTValue (Var var) = printTVar var
@@ -207,10 +214,10 @@ printTInstruction (TUnOp op val var) = "Unary(" ++ printTOperator op ++
 printTInstruction (TBinOp op val1 val2 var) = "Binary(" ++ printTBinOperator op ++
                                      "," ++ printTValue val1 ++ "," ++ printTValue val2 ++ "," ++ printTVar var ++ ")\n"
 printTInstruction (TCopy val1 val2) = "Copy(" ++ printTValue val1 ++ ", " ++ printTValue val2 ++ ")\n"
-printTInstruction (TJump val) = "Jump(" ++ printTVar val ++ ")\n"
-printTInstruction (TJumpIfZero val1 var) = "JumpIfZero(" ++ printTValue val1 ++ ", " ++ printTVar var ++ ")\n"
-printTInstruction (TJumpNotZero val1 var) = "JumpNotZero(" ++ printTValue val1 ++ ", " ++ printTVar var ++ ")\n"
-printTInstruction (TLabel var) = "Label(" ++ printTVar var ++ ")\n"
+printTInstruction (TJump val) = "Jump(" ++ printTLabel val ++ ")\n"
+printTInstruction (TJumpIfZero val1 var) = "JumpIfZero(" ++ printTValue val1 ++ ", " ++ printTLabel var ++ ")\n"
+printTInstruction (TJumpNotZero val1 var) = "JumpNotZero(" ++ printTValue val1 ++ ", " ++ printTLabel var ++ ")\n"
+printTInstruction (TLabelInst var) = "Label(" ++ printTLabel var ++ ")\n"
 
 printTFunction :: TFunction -> String
 printTFunction (TFunction name instList) = "Function: " ++ name ++ "\n" ++ concatMap printTInstruction instList
