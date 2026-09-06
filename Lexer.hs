@@ -36,6 +36,7 @@ data Token
     | NotToken
     | LThanToken
     | GThanToken
+    | AssignToken
     -- Show allows us to print these new data types, eq allows us to check them for equality
     -- deriving tells the compiler to come up with these functions for us
     deriving (Show, Eq)
@@ -48,6 +49,8 @@ lexer [] = Right []
 -- check for comments:
 lexer ('/':'/':x) = skipLine x
 lexer ('/':'*':x) = skipMultiLine x
+
+-- and other 2 character tokens:
 lexer ('-':'-':x) = addToken (DecrementToken, x)
 lexer ('<':'<':x) = addToken (LShiftToken, x)
 lexer ('>':'>':x) = addToken (RShiftToken, x)
@@ -78,6 +81,7 @@ lexer (c:x)
   | c == '!'    = addToken (NotToken, x)
   | c == '<'    = addToken (LThanToken, x)
   | c == '>'    = addToken (GThanToken, x)
+  | c == '='    = addToken (AssignToken, x)
   | isDigit c   = lexNum (c:x)
   | isAlpha c   = lexWord (c:x)
   | otherwise   = Left (" Error - Invalid character: " ++ [c])

@@ -162,9 +162,15 @@ getTStatement n (Return exp) =
 -- take a parsed function and return a tacky function item with the correct name and the list of statements it corresponds to:
 -- getFunction doesn't need to know about what temporary variables were used in other funcitons.
 getTFunction :: Function -> TFunction
-getTFunction (Function name st) =
-    let (instList, _) = getTStatement 0 st
+getTFunction (Function name blocks) =
+    -- just temporarily changed to avoid type error with statement vs blockitem
+    let instList = concatMap getTBlockItem blocks
     in TFunction name instList
+
+-- not implemented yet! just to appease the compiler!
+getTBlockItem :: BlockItem -> [TInstruction]
+getTBlockItem (S _) = []
+getTBlockItem (D _) = []
 
 -- take a parsed program and return a tacky function.
 -- programs are only a single function right now, but later they may be multiple functions:

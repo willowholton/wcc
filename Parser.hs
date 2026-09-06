@@ -8,21 +8,34 @@ data Program
   = Program Function
   deriving (Show, Eq)
 
--- a function has a name (the string) and a body (just a single statement for now),
--- Function function takes these as two separate arguments not a tuple:
+-- a function has a name (the string) and a body, which is a list of block items:
 data Function
-  = Function String Statement
+  = Function String [BlockItem]
   deriving (Show, Eq)
 
--- there is only one kind of statement for now, a return:
+-- a block item can be a statement or a declaration:
+data BlockItem
+  = S Statement
+  | D Declaration
+  deriving (Show, Eq)
+
+-- Statements are returns, expressions, or null:
 data Statement
   = Return Exp
+  | Expression Exp
+  | Null
+  deriving (Show, Eq)
+
+data Declaration
+  = Declaration String (Maybe Exp) -- int a; and int a = 4; are both valid declarations
   deriving (Show, Eq)
 
 data Exp
    = Constant Int
    | Unary UnOp Exp
    | Binary BinOp Exp Exp
+   | Variable String -- Variable to avoid name collisions elsewhere
+   | Assignment Exp Exp
   deriving (Show, Eq)
 
 data UnOp
@@ -80,6 +93,8 @@ parseFactor (ComplementToken : rem) = do
 parseFactor (NotToken : rem) = do
   (exp, rem1) <- parseFactor rem
   Right (Unary Not exp, rem1)
+-- an identifier token followed by a name gets parsed as a var:
+parseFactor (IdentifierToken name : rem) = Right (Variable name, rem)
 -- if called on anything that doesn't match the above pattern, return an error message:
 parseFactor _ = Left "Error - expected an expression"
 
@@ -102,6 +117,12 @@ parseExp tokens minPrec = do
 parseExpLoop :: Int -> (Exp -> ([Token] -> (Either String (Exp, [Token]))))
 parseExpLoop minPrec left rem =
   case peek rem of
+    Just AssignToken | (1 >= minPrec) -> do
+      -- consume = if minprec value is valid:
+      rem1 <- expect AssignToken rem "Error - expected '='"
+      (rhs, rem2) <- parseExp rem1 1 -- need to pass precedence value, in this case 1
+      -- call parseExpLoop recurrsively on right hand side with original minprec value:
+      parseExpLoop minPrec (Assignment left rhs) rem2
     -- op is the next token found by peek, needs a guard to check that whatever peek found really is a binary op
     -- and that it really does have greater precedence.
     Just op | Just prec <- getPrecedence op, prec >= minPrec -> do
@@ -141,6 +162,8 @@ printExp :: Exp -> (String)
 printExp (Constant num)  = "Constant(" ++ show num ++ ")"
 printExp (Unary op exp) = printUnOp op ++ "(" ++ printExp exp ++ ")"
 printExp (Binary op exp1 exp2) = printBinOp op ++ "(" ++ printExp exp1 ++ ", " ++ printExp exp2 ++ ")"
+printExp (Variable name) = "Var(" ++ name ++ ")"
+printExp (Assignment name exp) = "Assign(" ++ printExp exp ++ ", " ++ printExp exp ++ ")"
 
 -- print unary and binary operators:
 printUnOp :: UnOp -> String
@@ -164,7 +187,9 @@ printBinOp NEqual   = "Not Equal"
 printBinOp LThan    = "Less Than"
 printBinOp GThan    = "Greater Than"
 printBinOp LEQ      = "Less or Equal"
-printBinOp GEQ      = "Greater or Equal"
+printBinOp GEQ       = "Greater or Equal"
+printBinOp BitLShift = "Left Shift"
+printBinOp BitRShift = "Right Shift"
 
 parseStatement :: [Token] -> Either String (Statement, [Token])
 -- split the return keyword off and parse the first token of the remaining tokens. parseExp needs
@@ -178,8 +203,17 @@ parseStatement (RetKeywordToken : rem) = case parseExp rem 0 of
         (SemicolonToken : rem) -> Right (Return exp, rem)
         -- if no semicolon, return error:
         _                      -> Left "Error - expected ;"
+-- a ; by iteself is a valid statement, but it's just null:
+parseStatement (SemicolonToken : rem) = Right (Null, rem)
+-- all other tokens can be paresed as expressions
+parseStatement tokens = case (parseExp tokens 0) of
+  Left err -> Left err
+  -- if the parsed expression isn't followed by a semicolon it's an error:
+  Right (exp, rem) -> case rem of
+    (SemicolonToken : rem) -> Right (Expression exp, rem)
+    _                      -> Left "Error - expected ';'"
 -- anything else that doesn't match the pattern of "return ___" is an error
-parseStatement _ = Left "Error - expected 'return'"
+--parseStatement _ = Left "Error - expected 'return'"
 
 -- print statement nicely using printExpression:
 printStatement :: Statement -> Int -> (String)
@@ -187,6 +221,74 @@ printStatement (Return exp) depth =
   "Return(\n" ++ 
   indent (depth + 1) ++ printExp exp ++ "\n" ++
   indent depth ++ ")"
+printStatement (Expression exp) depth = printExp exp
+printStatement (Null) depth = "Null"
+
+
+parseDeclaration :: [Token] -> (Either String (Declaration, [Token]))
+parseDeclaration tokens = do
+  (name, rem) <- expectIdentifier tokens "Error - expected a variable name"
+  -- peek what comes after the variable name:
+  case peek rem of 
+    -- if variable name is followed by = then it's an assignment:
+    Just AssignToken -> do
+      -- get rid of the = character:
+      rem1 <- expect AssignToken rem "Error - expected '='"
+      -- parse the expression that follows:
+      (exp, rem2) <- parseExp rem1 0
+      -- must be followed by a semicolon:
+      rem3 <- expect SemicolonToken rem2 "Error - expected ';'"
+      Right (Declaration name (Just exp), rem3)
+    -- otherwise it's just a declaration with null variable name:
+    _ -> do
+      -- still must be followed by a semicolon:
+      rem1 <- expect SemicolonToken rem "Error - expected ';'"
+      Right (Declaration name Nothing, rem1)
+
+-- print function using printStatement:
+printDeclaration :: Declaration -> Int -> String
+-- a name without an assignment just gets printed:
+printDeclaration (Declaration name (Nothing)) depth = 
+  indent depth ++ "Declaration(\n" ++
+  indent (depth+1) ++ "name = " ++ name ++ "\n" ++
+  indent (depth) ++ ")"
+-- a name with an assignment gets printed along with the initializing expression:
+printDeclaration (Declaration name (Just exp)) depth = 
+  indent depth ++ "Declaration(\n" ++
+  indent (depth+1) ++ "name = " ++ name ++ "\n" ++
+  indent (depth+1) ++ "init = " ++ printExp exp ++ "\n" ++
+  indent (depth) ++ ")"
+
+-- parse a single block item
+parseBlockItem :: [Token] -> (Either String (BlockItem, [Token]))
+-- given int keyword, parse the declaration that follows:
+parseBlockItem (IntKeywordToken : rem) = do
+  (dec, rem1) <- parseDeclaration rem
+  -- and return the declaration along with the remainder:
+  Right (D dec, rem1)
+-- given anything else, just parse the statement like usual:
+parseBlockItem tokens = do
+  (st, rem) <- parseStatement tokens
+  Right (S st, rem)
+
+printBlockItem :: BlockItem -> Int -> String
+printBlockItem (D dec) depth = printDeclaration dec depth
+printBlockItem (S st) depth  = printStatement st depth
+
+
+-- parse a whole list of block items:
+parseBlocks :: [Token] -> Either String ([BlockItem], [Token])
+parseBlocks tokens = case peek tokens of
+  -- close brace indicates block is finished and there are no more tokens to parse:
+  Just CloseBraceToken -> Right([], tokens)
+  -- nothing left is an error:
+  Nothing -> Left "Error - expected '}'"
+  _ -> do
+    -- parse the first block item:
+    (item, rem) <- parseBlockItem tokens
+    -- call parseBloicks recursively to take care of any remaining blocks:
+    (items, rem1) <- parseBlocks rem
+    Right (item : items, rem1)
 
 parseFunction :: [Token] -> Either String (Function, [Token])
 -- take the given list of tokens and check for each of the following:
@@ -199,17 +301,22 @@ parseFunction tokens = do
     rem3 <- expect VoidKeywordToken rem2 "Error - expected 'void'"
     rem4 <- expect CloseParToken rem3 "Error - expected ')'"
     rem5 <- expect OpenBraceToken rem4 "Error - expected '{'"
-    (st, rem6) <- parseStatement rem5
+    (st, rem6) <- parseBlocks rem5 -- parseFunction calls parseBlocks now, not just parseStatement
     rem7 <- expect CloseBraceToken rem6 "Error - expected '}'"
     Right (Function name st, rem7)
 
--- print function using printStatement:
+-- print function using printBlockItem to print all the blocks:
 printFunction :: Function -> Int -> String
-printFunction (Function name st) depth = 
+printFunction (Function name blocks) depth = 
   indent depth ++ "Function(\n" ++
   indent (depth+1) ++ "name = " ++ name ++ "\n" ++
-  indent (depth+1) ++ "body = " ++ printStatement st (depth + 1) ++ "\n" ++
+  indent (depth+1) ++ "body = \n" ++
+  -- print all blocks, not just a single statement anymore:
+  concatMap printBlock blocks ++ "\n" ++
   indent (depth) ++ ")"
+  where
+    -- helper function to print blocks aligned correctly with given depth:
+    printBlock block = indent (depth+1) ++ printBlockItem block (depth+1) ++ "\n"
 
 -- expect is a function that takes a token type, a list of tokens, and an error message to produce
 -- if it fails to find the specified token at the head of the given list of tokens. it returns either
@@ -309,4 +416,6 @@ getPrecedence OrToken       = Just 15
 -- logical and, or
 getPrecedence LAndToken     = Just 10
 getPrecedence LOrToken      = Just 5
+-- assignment:
+getPrecedence AssignToken   = Just 1
 getPrecedence _             = Nothing
